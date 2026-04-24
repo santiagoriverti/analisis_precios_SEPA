@@ -1,80 +1,155 @@
-# analisis_precios_SEPA
+# 🛒 Análisis de Precios SEPA (Precios Claros)
 
-Proyecto de análisis de precios basado en datos de Precios Claros (SEPA). Automatiza la ingesta de archivos ZIP, normaliza y unifica datos de productos, comercios y sucursales, calcula métricas de precios y genera reportes en Excel, incluyendo análisis por ubicación y filtros temáticos.
+Pipeline optimizado para procesamiento masivo de datos del sistema SEPA (Sistema Electrónico de Publicidad de Precios Argentinos), con foco en eficiencia de memoria, reproducibilidad y generación de canastas comparables.
 
 ---
 
 ## 📊 Descripción
 
-Este proyecto permite procesar de forma automática los datos publicados por SEPA (Sistema Electrónico de Publicidad de Precios Argentinos), integrando múltiples archivos comprimidos diarios en una estructura unificada para su análisis.
+Este proyecto automatiza la ingesta, limpieza, integración y análisis de los datos publicados por SEPA.
 
-Se enfoca en:
-- Consolidación de datos de productos, comercios y sucursales
-- Limpieza y tipado de variables
-- Generación de métricas de precios
-- Análisis específicos por categorías (ej: verduras de hoja)
-- Exportación de resultados a Excel
+A diferencia de enfoques tradicionales, este pipeline está diseñado para trabajar con datasets muy grandes (millones de registros), minimizando el uso de RAM y permitiendo recuperación rápida ante fallos mediante persistencia intermedia en disco.
 
 ---
 
-## ⚙️ Funcionalidades
+## 🚀 Características principales
 
-- 🔍 Detección automática de archivos `sepa_*.zip`
-- 📦 Extracción de ZIPs anidados en memoria
-- 🧹 Limpieza y normalización de datos
-- 🔗 Integración entre productos, comercios y sucursales
-- 📈 Cálculo de:
-  - Precio promedio
-  - Precio mínimo
-  - Precio máximo
-- 🛒 Generación de catálogo de productos únicos
-- 🥬 Filtros por palabras clave (ej: "lechuga", "ensalada")
-- 📍 Análisis geográfico por sucursal
-- 📤 Exportación a Excel con formato
+- 📦 Descompresión automática de ZIPs anidados
+- ⚡ Lectura optimizada con tipos de datos eficientes (`int32`, `float32`, `category`)
+- 💾 Cacheo en formato **Parquet** para evitar reprocesamientos
+- 🧹 Limpieza y filtrado de datos irrelevantes
+- 🔗 Integración de:
+  - Productos
+  - Comercios
+  - Sucursales
+- 🏷️ Clasificación automática de productos por rubro
+- 🧠 Selección de productos **canastables** (comparables entre cadenas)
+- 🔁 Deduplicación inteligente por **concepto de producto**
+- 📍 Preparado para análisis geográfico
+- ☁️ Exportación a Google Drive
 
 ---
 
-## 🗂️ Estructura de datos
+## 🧱 Arquitectura del pipeline
 
-El pipeline genera tres DataFrames principales:
+El flujo se divide en dos etapas principales:
 
-- `df_productos`: información de precios y productos
-- `df_comercios`: datos de cadenas comerciales
-- `df_sucursales`: ubicación y características de sucursales
+### 🔹 ETAPA A — Ingesta y consolidación
+
+1. Descompresión de archivos diarios
+2. Carga optimizada de CSVs
+3. Filtrado de:
+   - Farmacias
+   - Estaciones de servicio
+4. Construcción de `df_precios` (tabla unificada)
+5. Persistencia en cache (`parquet`)
+
+**Outputs:**
+- `df_comercio`
+- `df_sucursales`
+- `df_precios`
+
+---
+
+### 🔹 ETAPA B — Selección de canasta
+
+1. Cálculo de métricas por producto:
+   - Cobertura (banderas, provincias)
+   - Distribución de precios (p10, p50, p90)
+2. Filtros de calidad:
+   - Presencia nacional
+   - Estabilidad de precios
+3. Clasificación por rubro (modelo heurístico)
+4. Generación de **productos canastables**
+
+**Output:**
+- `canastables.parquet`
+
+---
+
+### 🔹 ETAPA C — Deduplicación (concepto de producto)
+
+Se eliminan variantes redundantes (ej: tamaños distintos del mismo producto):
+
+- Extracción de **concepto** (marca + tipo)
+- Eliminación de:
+  - Unidades (kg, ml, etc.)
+  - Formatos (pack, botella, etc.)
+  - Palabras irrelevantes
+- Selección del mejor representante por cobertura
+
+**Output final:**
+- `canasta_dedup.parquet`
+
+---
+
+## 📂 Estructura de datos
+
+### DataFrames principales
+
+- `df_precios`  
+  → Tabla consolidada con precios + ubicación + cadena
+
+- `canastables`  
+  → Productos comparables entre cadenas
+
+- `canasta_dedup`  
+  → Canasta final sin duplicados conceptuales
 
 ---
 
 ## 📁 Outputs
 
-El proyecto genera los siguientes archivos:
+Archivos generados (formato Parquet):
 
-- `productos_unicos.xlsx`  
-  → Catálogo deduplicado de productos
-
-- `productos_precios_promedio.xlsx`  
-  → Métricas agregadas por producto
-
-- `verduras_hoja_por_sucursal.xlsx`  
-  → Análisis filtrado por keywords con detalle geográfico
+- `df_comercio.parquet`
+- `df_sucursales.parquet`
+- `df_precios.parquet`
+- `canastables.parquet`
+- `canasta_dedup.parquet`
 
 ---
 
-## 🚀 Uso
+## ⚙️ Optimizaciones clave
 
-1. Subir archivos `sepa_*.zip` al entorno (por ejemplo, Google Colab)
-2. Ejecutar el script completo
-3. Revisar los archivos Excel generados en `/content`
+- ✅ Uso de `category` para strings repetidos
+- ✅ Conversión temprana de tipos numéricos (`float32`, `int32`)
+- ✅ Eliminación temprana de columnas innecesarias (promos)
+- ✅ Liberación explícita de memoria (`del` + `gc.collect()`)
+- ✅ Pipeline idempotente con cache en disco
+- ✅ Evita duplicación de DataFrames grandes en RAM
 
 ---
 
-## 🧰 Requisitos
+## 🧪 Criterios de selección de canastables
 
-- Python 3.9+
-- pandas
-- openpyxl
-- tqdm
+Un producto entra en la canasta si cumple:
 
-Instalación rápida:
+- ≥ 8 cadenas
+- ≥ 5 provincias
+- Ratio p90/p10 ≤ 3
+- Precio mediano ≥ $50
 
-```bash
-pip install pandas openpyxl tqdm
+---
+
+## 🏷️ Rubros utilizados
+
+- Almacén
+- Bebidas
+- Lácteos
+- Carnes y fiambres
+- Panadería y harinas
+- Limpieza
+- Higiene personal
+- Bebé
+- Snacks y golosinas
+- Alcohol
+
+---
+
+## ☁️ Uso en Google Colab
+
+### 1. Ejecutar pipeline principal
+
+```python
+df_comercio, df_sucursales, df_precios, canastables = pipeline()
